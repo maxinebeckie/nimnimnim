@@ -1,7 +1,8 @@
 use std::path::PathBuf;
+use std::process;
 
+use anyhow::Result;
 use clap::{arg, command, value_parser, ArgAction, Command};
-
 use nimlib::{moves, NimAction, NimGame, NimRule, Split, Stack, TakeSize};
 
 const RULES: [NimRule; 1] = [NimRule {
@@ -10,19 +11,6 @@ const RULES: [NimRule; 1] = [NimRule {
 }];
 
 const STACKS: [Stack; 4] = [Stack(1), Stack(3), Stack(5), Stack(7)];
-
-fn create_nim_game() -> NimGame {
-    NimGame::new(RULES.to_vec(), STACKS.to_vec())
-}
-
-fn print_example_game(game: &NimGame) {
-    dbg!(&game);
-}
-
-fn calculate_example_nimber() {
-    let game = create_nim_game();
-    println!("{}", game.calculate_nimber());
-}
 
 fn make_move_woo(game: &mut NimGame) {
     let mov = moves::calculate_legal_moves(&STACKS, &RULES, (0, 0))
@@ -42,11 +30,24 @@ fn make_move_woo(game: &mut NimGame) {
 }
 
 fn main() {
+    env_logger::init();
+
+    process::exit(match run() {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("Fatal: {e}");
+            1
+        }
+    });
+}
+
+fn run() -> Result<()> {
     let matches = command!()
-        .arg(arg!([name] "Optional name to operate on"))
         .arg(
             arg!(
-                -c --config <FILE> "Sets a custom config file"
+                -c --config <FILE> "set custom rules in RON format (https://github.com/ron-rs/ron). Default is:
+                         (take: TakeSize::Any,  split: Split::Never)
+                for more information see the nimlib documentation on the NimRule struct."
             )
             .required(false)
             .value_parser(value_parser!(PathBuf)),
@@ -59,56 +60,34 @@ fn main() {
                 .about("does testing things")
                 .arg(arg!(-l --list "lists test values").action(ArgAction::SetTrue)),
         )
-        .arg(arg!(
-            -e --example ... "prints an example game"
-        ))
-        .arg(arg!(
-            --calculate ... "calculates the nim sum of example game"
-        ))
-        .arg(arg!(
-            -t --take ... "take an example number"
-        ))
+       .arg(
+            arg!(
+                -s --sum <PILE> "return nim sum of piles, eg. nimnimnim -s \"1 3 5 7\" returns 0"
+            )
+            .required(false)
+            .value_parser(value_parser!(String)),
+        )
         .get_matches();
 
-    if let Some(name) = matches.get_one::<String>("name") {
-        println!("Value for name: {}", name);
-    }
-
+    // config
     if let Some(config_path) = matches.get_one::<PathBuf>("config") {
         println!("Value for config: {}", config_path.display());
     }
 
-    match matches.get_one::<u8>("example") {
-        Some(_) => print_example_game(&create_nim_game()),
-        None => (),
-    }
 
-    match matches.get_one::<u8>("calculate") {
-        Some(_) => calculate_example_nimber(),
-        None => (),
-    }
+    // sum 
+    if let Some(piles) = matches.get_one::<String>("sum") {
+        let mut piles_vec: Vec<u64> = Vec::new();
 
-    match matches.get_one::<u8>("take") {
-        Some(_) => {
-            let mut game = create_nim_game();
-            make_move_woo(&mut game);
-            print_example_game(&game);
-            println!("{}", game.calculate_nimber());
+        for p in piles.split_whitespace() {
+            piles_vec.push(p.parse::<u64>()?);
         }
-        None => (),
-    }
 
-    // check how many flags or args occured
-    // only flags can have multiple occurrences
-    // wtf is the difference btwn a flag and an arg?????
-    match matches
-        .get_one::<u8>("debug")
-        .expect("Count's are defaulted")
-    {
-        0 => println!("Debug mode is off"),
-        1 => println!("Debug mode is kind of on"),
-        2 => println!("Debug mode is on"),
-        _ => println!("Don't be crazy"),
+        let stacks: Vec<Stack> = piles_vec.into_iter().map(|n| Stack(n)).collect();
+
+        let game = NimGame::new(RULES.to_vec(), stacks);
+
+        println!("{}", game.calculate_nimber());
     }
 
     if let Some(matches) = matches.subcommand_matches("test") {
@@ -120,4 +99,6 @@ fn main() {
             println!("Not printing testing lists...");
         }
     }
+
+    Ok(())
 }
